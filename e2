@@ -1,0 +1,138 @@
+apartments.ts
+import { Room, RoomNumber } from "./contracts/room";
+
+export type GuestCount = number;
+
+export class Apartment implements Room {
+  constructor(
+    private price: number,
+    public roomNumber: RoomNumber,
+    private numberOfGuests: GuestCount
+  ) {}
+
+  get totalPrice(): number {
+    return this.price * this.numberOfGuests;
+  }
+
+  get cancellationPrice(): number {
+    return this.totalPrice * 0.8;
+  }
+}
+
+---
+decorators.ts
+export function modifyAirconditionedRoom(constructor: Function) {
+  const original = constructor.prototype;
+  Object.defineProperties(original, {
+    totalPrice: {
+      get() {
+        return this.price * 1.2;
+      },
+    },
+    cancellationPrice: {
+      get() {
+        return this.price * 1.2;
+      },
+    },
+  });
+}
+
+export function modifyMotelName(constructor: Function) {
+  constructor.MotelName = "Monthly Motel";
+}
+
+---
+decorators in index
+import { modifyAirconditionedRoom, modifyMotelName } from "./decorators";
+import { AirconditionedRoom } from "./contracts/airconditionedRoom";
+import { PartialMonthlyMotel } from "./contracts/partialMonthlyMotel";
+
+modifyAirconditionedRoom(AirconditionedRoom);
+modifyMotelName(PartialMonthlyMotel);
+---
+montlyModel.ts
+import { Room, RoomNumber } from "./contracts/room";
+import { Motel } from "./contracts/motel";
+import { PartialMonthlyMotel } from "./contracts/partialMonthlyMotel";
+import { SummerMonth, WinterMonth } from "./contracts/util";
+
+type MonthType = SummerMonth | WinterMonth;
+type MonthKey = keyof typeof SummerMonth | keyof typeof WinterMonth;
+
+export class MonthlyMotel<T extends MonthType> extends PartialMonthlyMotel implements Motel<T> {
+  private rooms: Map<RoomNumber, Room> = new Map();
+  private bookings: Map<T, Set<RoomNumber>> = new Map();
+  private budget = 0;
+
+  addRoom(room: Room): string {
+    if (!("roomNumber" in room && "totalPrice" in room && "cancellationPrice" in room)) {
+      return "Value was not a Room.";
+    }
+    if (this.rooms.has(room.roomNumber)) {
+      return `Room '${room.roomNumber}' already exists.`;
+    }
+    this.rooms.set(room.roomNumber, room);
+    return `Room '${room.roomNumber}' added.`;
+  }
+
+  bookRoom(roomNumber: RoomNumber, bookedMonth: T): string {
+    if (!this.rooms.has(roomNumber)) {
+      return `Room '${roomNumber}' does not exist.`;
+    }
+
+    if (!this.bookings.has(bookedMonth)) {
+      this.bookings.set(bookedMonth, new Set());
+    }
+
+    const monthBookings = this.bookings.get(bookedMonth)!;
+    if (monthBookings.has(roomNumber)) {
+      return `Room '${roomNumber}' is already booked for '${bookedMonth}'.`;
+    }
+
+    monthBookings.add(roomNumber);
+    const room = this.rooms.get(roomNumber)!;
+    this.budget += room.totalPrice;
+    return `Room '${roomNumber}' booked for '${bookedMonth}'.`;
+  }
+
+  cancelBooking(roomNumber: RoomNumber, bookedMonth: T): string {
+    if (!this.rooms.has(roomNumber)) {
+      return `Room '${roomNumber}' does not exist.`;
+    }
+
+    const monthBookings = this.bookings.get(bookedMonth);
+    if (!monthBookings || !monthBookings.has(roomNumber)) {
+      return `Room '${roomNumber}' is not booked for '${bookedMonth}'.`;
+    }
+
+    monthBookings.delete(roomNumber);
+    const room = this.rooms.get(roomNumber)!;
+    this.budget -= room.cancellationPrice;
+    return `Booking cancelled for Room '${roomNumber}' for '${bookedMonth}'.`;
+  }
+
+  getTotalBudget(): string {
+    return `Motel: ${PartialMonthlyMotel.MotelName}\nTotal budget: $${this.budget.toFixed(2)}`;
+  }
+}
+
+---
+index.ts
+import { MonthlyMotel } from "./monthlyMotel";
+import { AirconditionedRoom } from "./contracts/airconditionedRoom";
+import { SummerMonth } from "./contracts/util";
+import { Apartment } from "./apartment";
+
+let motel = new MonthlyMotel<SummerMonth>();
+
+let roomA01 = new AirconditionedRoom(100, "A01");
+let roomA02 = new Apartment(70, "A02", 3);
+
+console.log(motel.addRoom(roomA01));
+console.log(motel.addRoom(roomA02));
+console.log(motel.bookRoom("A01", SummerMonth.August));
+console.log(motel.bookRoom("A02", SummerMonth.June));
+console.log(motel.getTotalBudget());
+console.log(motel.cancelBooking("A01", SummerMonth.August));
+console.log(motel.getTotalBudget());
+
